@@ -1,0 +1,8 @@
+#!/bin/bash
+cd /upp/servers/vfxstore2/VFXstore/PROJECTS/
+#python /home/svc_vpvfxtransfer/dev/usd_transfer/app.py /upp/servers/vfxstore2/VFXstore/PROJECTS/bul/people/radoslav.sraga/assets/tunnelEntrance004.usd --export-root /home/svc_vpvfxtransfer/dev/usd_transfer/usd_transfer_export/ --include-geometries --include-references --format .usda
+#python /home/svc_vpvfxtransfer/dev/usd_transfer/app.py /upp/servers/vfxstore2/VFXstore/PROJECTS/can/usd/seq/wya/1650/usdManifest/renderManifest/131/renderManifest.bty_env_main.usd --export-root /home/svc_vpvfxtransfer/dev/usd_transfer/usd_transfer_export/ --format .usda
+#python /home/svc_vpvfxtransfer/dev/usd_transfer/app.py /upp/servers/vfxstore2/VFXstore/PROJECTS/can/usd/seq/wya/1930/usdManifest/renderManifest/005/renderManifest.bty_env_main.usd --export-root /home/svc_vpvfxtransfer/dev/usd_transfer/usd_transfer_export/ --format .usda --include-references
+#DebugVP
+#python /home/svc_vpvfxtransfer/dev/usd_transfer/app.py /upp/servers/vfxstore2/VFXstore/PROJECTS/can/usd/seq/debug/VP/usdManifest/renderManifest/002/renderManifest.bty_env_main.usd --export-root /home/svc_vpvfxtransfer/dev/usd_transfer/usd_transfer_export/ --format .usda --include-references
+python /home/svc_vpvfxtransfer/dev/usd_transfer/app.py /upp/servers/vfxstore2/VFXstore/PROJECTS/can/usd/seq/mkg/3085/usdManifest/renderManifest/010/renderManifest.bty_env_main_50mm.usd --export-root /home/svc_vpvfxtransfer/dev/usd_transfer/usd_transfer_export/ --include-references --format .usda

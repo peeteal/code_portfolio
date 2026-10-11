@@ -1,0 +1,267 @@
+{# templates/index.html #}
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+  <h1>USD Transfer (Web)</h1>
+
+  <!-- CONNECTION PANEL -->
+  <!-- <section class="panel">
+    <h2>Connection</h2>
+    <form method="post" id="connForm">
+      <div class="form-row">
+        <label>Host:</label>
+        <input type="text" name="host" value="{{ creds.HOST|default('') }}" {% if connected %}disabled{% endif %}>
+      </div>
+      <div class="form-row">
+        <label>Username:</label>
+        <input type="text" name="username" value="{{ creds.USERNAME|default('') }}" {% if connected %}disabled{% endif %}>
+      </div>
+      <div class="form-row">
+        <label>Password:</label>
+        <input type="password" name="password" value="{{ creds.PASSWORD|default('') }}" {% if connected %}disabled{% endif %}>
+      </div>
+      <div class="form-row buttons">
+        {% if connected %}
+          <button type="submit" name="disconnect">Disconnect</button>
+        {% else %}
+          <button type="submit" name="connect">Connect</button>
+        {% endif %}
+        <button type="submit" name="load_private">Load .private</button>
+      </div>
+    </form>
+  </section> -->
+
+  <!-- OPERATOR PANEL -->
+  <section class="panel">
+    <h2>Operator</h2>
+    <form method="post" id="operatorForm">
+      <div class="form-row">
+        <label>Local Directory:</label>
+        <input type="text" name="local_dir" placeholder="Enter local export path...">
+      </div>
+
+      <div class="checkbox-row">
+        <label>Filter:</label>
+        <div class="checkbox-container">
+          <input type="checkbox" name="lights" {% if request.form.get('lights') %}checked{% endif %}>
+          <span>Lights</span>
+        </div>
+      </div>
+      
+      <h3>Available Shots</h3>
+      <div class="form-row">
+        <label>Format:</label>
+        <select name="format" id="formatSelect">
+          <option {% if request.form.get('format','Original') == 'Original' %}selected{% endif %}>Original</option>
+          <option {% if request.form.get('format') == 'usd' %}selected{% endif %}>usd</option>
+          <option {% if request.form.get('format') == 'usda' %}selected{% endif %}>usda</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Project:</label>
+        <select id="project" name="project">
+          <option value="">-- select project --</option>
+          {% for p in projects %}
+            <option value="{{ p }}" {% if p == selected_project %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Sequence:</label>
+        <select id="sequence" name="sequence">
+          <option value="">-- select sequence --</option>
+          {% for s in sequences %}
+            <option value="{{ s }}" {% if s == selected_sequence %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Shot:</label>
+        <select id="shot" name="shot">
+          <option value="">-- select shot --</option>
+          {% for sh in shots %}
+            <option value="{{ sh }}" {% if sh == selected_shot %}selected{% endif %}>{{ sh }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Version:</label>
+        <select id="version" name="version">
+          <option value="">-- select version --</option>
+          {% for v in versions %}
+            <option value="{{ v }}" {% if v == selected_version %}selected{% endif %}>{{ v }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row buttons">
+        <button type="submit" name="add_line">Add Line</button>
+        <button type="submit" name="run">Run Commands</button>
+        <button type="submit" name="reload">Reload projects</button>
+      </div>
+
+      <div class="form-row">
+        <label>Commands:</label><br>
+        <textarea id="commands" name="commands" rows="6" cols="80"
+          placeholder="Add commands (one per line). Use project sequence shot version and optional 'usd'/'usda' format.">{{ commands|default('') }}</textarea>
+      </div>
+    </form>
+  </section>
+
+  <!-- LIVE TERMINAL PANEL -->
+  <section class="panel">
+    <h2>Logs</h2>
+    <!-- <button id="toggleTerminalBtn">Toggle Terminal</button> -->
+    <div id="progressArea" style="display:none; margin-top:10px;">
+      <!-- <div id="progressLabel">Working...</div> -->
+      <progress id="progressBar" value="0" max="1" style="width:100%; height:18px;"></progress>
+    </div>
+    <pre id="terminalBox" style="background:#1e1e1e;color:#d4d4d4;padding:10px;height:300px;overflow:auto;"></pre>
+  </section>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+  // Terminal & SSE
+  var es = null;
+  function appendTerminalLine(line) {
+      var $tb = $("#terminalBox");
+      $tb.append(line + "\n");
+      $tb.scrollTop($tb[0].scrollHeight);
+      var logs = localStorage.getItem("terminalLogs") || "";
+      logs += line + "\n";
+      localStorage.setItem("terminalLogs", logs);
+  }
+
+  $(function() {
+      $("#terminalBox").text(localStorage.getItem("terminalLogs") || "");
+
+      // Start SSE
+      if (!es) {
+          es = new EventSource("/stream");
+            es.onmessage = function(e) {
+              var data = e.data || "";
+              if (data.startsWith("PROGRESS|")) {
+                  var parts = data.split("|");
+                  var cur = parseInt(parts[1]) || 0;
+                  var tot = parseInt(parts[2]) || 1;
+                  var lbl = parts.slice(3).join("|") || "";
+                  $("#progressBar").attr("max", tot).val(cur);
+                  $("#progressLabel").text(lbl);
+                  $("#progressArea").show();
+              } else if (data === "PROGRESS_DONE") {
+                  $("#progressBar").val($("#progressBar").attr("max"));
+                  $(".progress-bar").addClass("completed"); // make green
+                  $("#progressLabel").text("Completed");
+                  $("#progressArea").show(); // keep it visible
+                  appendTerminalLine("=== All tasks completed ===");
+              } else if (data.startsWith("LOG|")) {
+                  appendTerminalLine(data.substring(4));
+              } else {
+                  appendTerminalLine(data);
+              }
+          };
+          es.onerror = function(e) { try { es.close(); } catch(e){} es = null; };
+      }
+
+      // Toggle terminal
+      $("#toggleTerminalBtn").on("click", function() {
+          var $tb = $("#terminalBox");
+          if ($tb.is(":visible")) {
+              $tb.hide();
+              $(this).text("Show Terminal");
+          } else {
+              $tb.show();
+              $(this).text("Hide Terminal");
+          }
+      });
+  });
+
+  // Cascading selects
+  function fillSelect($sel, arr, selected) {
+    $sel.empty().append(new Option("-- select --", ""));
+    arr.forEach(item => {
+      var opt = new Option(item, item);
+      if (item === selected) opt.selected = true;
+      $sel.append(opt);
+    });
+  }
+
+  function loadSequences(project, selectedSequence) {
+    if (!project) { fillSelect($("#sequence"), [], ""); return; }
+    $.getJSON("/api/sequences", { project }).done(data => fillSelect($("#sequence"), data, selectedSequence));
+  }
+
+  function loadShots(project, sequence, selectedShot) {
+    if (!project || !sequence) { fillSelect($("#shot"), [], ""); return; }
+    $.getJSON("/api/shots", { project, sequence }).done(data => fillSelect($("#shot"), data, selectedShot));
+  }
+
+  function loadVersions(project, sequence, shot, selectedVersion) {
+    if (!project || !sequence || !shot) { fillSelect($("#version"), [], ""); return; }
+    $.getJSON("/api/versions", { project, sequence, shot }).done(data => fillSelect($("#version"), data, selectedVersion));
+  }
+
+  $(function() {
+    var selected_project = "{{ selected_project|e }}";
+    var selected_sequence = "{{ selected_sequence|e }}";
+    var selected_shot = "{{ selected_shot|e }}";
+    var selected_version = "{{ selected_version|e }}";
+
+    if (selected_project) loadSequences(selected_project, selected_sequence);
+    if (selected_project && selected_sequence) loadShots(selected_project, selected_sequence, selected_shot);
+    if (selected_project && selected_sequence && selected_shot) loadVersions(selected_project, selected_sequence, selected_shot, selected_version);
+
+    $("#project").on("change", function() {
+      var p = $(this).val();
+      loadSequences(p, "");
+      fillSelect($("#shot"), [], "");
+      fillSelect($("#version"), [], "");
+    });
+
+    $("#sequence").on("change", function() {
+      var p = $("#project").val();
+      var s = $(this).val();
+      loadShots(p, s, "");
+      fillSelect($("#version"), [], "");
+    });
+
+    $("#shot").on("change", function() {
+      var p = $("#project").val();
+      var s = $("#sequence").val();
+      var sh = $(this).val();
+      loadVersions(p, s, sh, "");
+    });
+  });
+
+// Do NOT save/restore commands in localStorage
+$(function () {
+    // Only restore local_dir + checkboxes
+    ["local_dir", "lights"].forEach(function (name) {
+        const saved = localStorage.getItem("field_" + name);
+        if (saved !== null) {
+            const $el = $("[name='" + name + "']");
+            if ($el.is(":checkbox")) {
+                $el.prop("checked", saved === "true");
+            } else {
+                $el.val(saved);
+            }
+        }
+    });
+
+    $("[name='local_dir'], [name='lights']").on("change input", function () {
+        const name = $(this).attr("name");
+        if ($(this).is(":checkbox")) {
+            localStorage.setItem("field_" + name, $(this).is(":checked"));
+        } else {
+            localStorage.setItem("field_" + name, $(this).val());
+        }
+    });
+});
+
+
+</script>
+
+
+{% endblock %}
