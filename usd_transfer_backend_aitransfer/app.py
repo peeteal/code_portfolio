@@ -7,6 +7,7 @@ import exporter
 
 
 def is_usd_file(path: str) -> bool:
+    """Return True if path is an existing file with a .usd, .usda or .usdc extension."""
     valid_exts = ('.usd', '.usda', '.usdc')
     try:
         return path.lower().endswith(valid_exts) and os.path.isfile(path)
@@ -15,12 +16,14 @@ def is_usd_file(path: str) -> bool:
 
 
 def read_paths_file(filepath: str):
+    """Read a text file with one path per line and return its non-empty, stripped lines."""
     with open(filepath, 'r') as f:
         lines = [line.strip() for line in f if line.strip()]
     return lines
 
 
 def validate_paths(paths):
+    """Split paths into (valid_paths, invalid_paths) according to is_usd_file()."""
     valid_paths = []
     invalid_paths = []
     for p in paths:
@@ -32,6 +35,13 @@ def validate_paths(paths):
 
 
 def get_input_path():
+    """
+    Interactively ask for the USD file(s) to process.
+
+    Accepts either a single USD file or a text file listing one USD path per line,
+    and keeps prompting until at least one valid USD file is given.
+    Returns the list of valid USD file paths.
+    """
     while True:
         user_input = input("Enter a .usd file path or a paths file path: ").strip()
         if not user_input:
@@ -68,6 +78,17 @@ def get_input_path():
 
 def main(initial_path=None, export_root="./export", source_root="/upp/servers/vfxstore2/VFXstore/PROJECTS/", format=None,
          include_geometries=False, include_references=False):
+    """
+    Export filtered copies of one or more USD files into export_root.
+
+    - initial_path: a USD file, or a text file listing USD paths. If it is missing
+      or yields no valid USD file, the user is prompted on the console instead.
+    - export_root: output root; each file keeps its path relative to source_root.
+    - source_root: root of the source project tree.
+    - format: optional output extension (e.g. "usda") that replaces the original one.
+    - include_geometries / include_references: passed on to
+      Exporter.extract_filtered_from_render_manifest().
+    """
     print("Running!")
     if initial_path:
         if not os.path.exists(initial_path):

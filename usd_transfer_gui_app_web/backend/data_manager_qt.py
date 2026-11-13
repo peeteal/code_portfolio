@@ -10,6 +10,7 @@ class DataManager:
     """
 
     def __init__(self, backend: SSHBackend):
+        """Create a data manager with empty caches that reads the remote tree through backend."""
         self.backend = backend
         # structured caches
         self.projects: List[str] = []
@@ -27,6 +28,7 @@ class DataManager:
             return []
 
     def load_projects(self, root="/upp/servers/vfxstore2/VFXstore/PROJECTS/"):
+        """List the project folders under root, cache them in self.projects and return them sorted."""
         items = self.safe_listdir(root)
         if items:
             self.projects = [f.filename for f in items if str(f.longname).startswith("d")]
@@ -35,6 +37,7 @@ class DataManager:
         return []
 
     def load_sequences(self, project):
+        """List, cache and return the sorted sequence folders of a project (empty list if unavailable)."""
         path = f"/upp/servers/vfxstore2/VFXstore/PROJECTS/{project}/usd/seq/"
         items = self.safe_listdir(path)
         if items:
@@ -45,6 +48,11 @@ class DataManager:
         return []
 
     def load_shots(self, project, sequence):
+        """
+        List, cache and return the sorted shot folders of a sequence.
+
+        Only folders with an all-digit name count as shots.
+        """
         path = f"/upp/servers/vfxstore2/VFXstore/PROJECTS/{project}/usd/seq/{sequence}/"
         items = self.safe_listdir(path)
         if items:
@@ -55,6 +63,11 @@ class DataManager:
         return []
 
     def load_versions(self, project, sequence, shot):
+        """
+        List, cache and return the render manifest versions of a shot, newest first.
+
+        A version folder only counts if it contains renderManifest.bty_env_main.usd.
+        """
         base = f"/upp/servers/vfxstore2/VFXstore/PROJECTS/{project}/usd/seq/{sequence}/{shot}/usdManifest/renderManifest/"
         items = self.safe_listdir(base)
         if items:

@@ -40,6 +40,25 @@ import math
 from mathutils import Vector
 
 def tile_process(index : str):
+    """
+    Clean up the photogrammetry tile in the active collection and bake it to one texture.
+
+    The mesh objects of the active collection are copied into two new collections:
+    <index>_combined (bake source, keeps the original materials) and
+    <index>_cleanup (bake target). Each set is joined into a single object, moved
+    to the world origin and scaled by a power of two so that the median object
+    width ends up roughly between target_min and target_max. The cleanup object
+    then gets its doubles merged, its materials replaced by one new
+    <index>_material, a Smart UV unwrap, and a Cycles selected-to-active bake into
+    a new 8192x8192 <index>_texture image (EMIT if a source material has an
+    Emission node, otherwise DIFFUSE).
+
+    Non-mesh objects in the active collection are deleted, and the original and
+    combined collections are excluded from the view layer when done.
+
+    index: name prefix for the created collections, objects, material and image.
+    Raises an Exception if the active collection is empty.
+    """
     starttime = datetime.datetime.now()
     print("Cleanup started at ", starttime)
 
@@ -76,6 +95,7 @@ def tile_process(index : str):
 
     #Recursively traverse layer_collection for a particular name
     def recurLayerCollection(layerColl, collName):
+        """Return the layer collection named collName in layerColl or its descendants, or None."""
         found = None
         if (layerColl.name == collName):
             return layerColl
@@ -118,6 +138,7 @@ def tile_process(index : str):
             bpy.data.objects.remove(ob, do_unlink=True)
 
     def get_world_bbox_xy(obj):
+        """Return the (width, height) of the object's world-space bounding box in XY."""
         bbox_world = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
         xs = [v.x for v in bbox_world]
         ys = [v.y for v in bbox_world]
@@ -138,6 +159,13 @@ def tile_process(index : str):
     print(f"Selected median for bbox check: {med_bbox}")
 
     def compute_scaling_factor_to_standard(bbox):
+        """
+        Return a power-of-two scale factor that brings the bbox width into the target range.
+
+        The factor is doubled while bbox[0] * factor is below target_min; otherwise it
+        is halved while bbox[0] * factor is above target_max. Both directions are capped
+        at a factor of 1024.
+        """
         # use x coordinate as tile size for factor computation
         factor = 1.0
         # if chosen median is too small, multiply by 2 until within threshold
@@ -420,6 +448,7 @@ def _parse_translations_from_filename(filename):
 # Main processing function
 # ---------------------------
 def collect_objects_recursively(coll, objs_set):
+    """Add all objects of coll and of its child collections to objs_set (modified in place)."""
     for o in coll.objects:
         objs_set.add(o)
     for child in coll.children:
@@ -509,6 +538,12 @@ def process(bpy_module, import_collection, rdc_filepath=None, options=None, outp
     visible_collections = []
     for layer_coll in view_layer.layer_collection.children:
         def recurse_layer(layer):
+            """
+            Collect the visible collections under layer into visible_collections.
+
+            A collection is added when it is not excluded from the view layer and holds at
+            least one visible object. Children of excluded layers are not visited.
+            """
             if not layer.exclude:
                 coll = layer.collection
                 # check if it has at least one visible object in this view layer

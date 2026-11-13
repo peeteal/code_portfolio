@@ -12,7 +12,9 @@ from workers import FolderLoaderWorker, CommandRunnerWorker
 from utils import load_private_file, save_private_file
 
 class TerminalWindow(QDialog):
+    """Dialog with a read-only, terminal-styled text view for log output."""
     def __init__(self, parent=None):
+        """Build the dialog and its read-only log view."""
         super().__init__(parent)
         self.setWindowTitle("USD Transfer Logs")
         self.resize(800, 400)
@@ -39,9 +41,11 @@ class TerminalWindow(QDialog):
         # sys.stderr = self
         
     def write(self, message):
+        """Append plain text to the log; lets the window be used as a file-like output stream."""
         self.output.appendPlainText(message.strip())
     
     def log_message(self, message: str, is_error: bool = False):
+        """Append a message to the log; errors are prefixed with [ERROR] and shown in red."""
         if is_error:
             colored = f'<span style="color:#f44747;">[ERROR] {message}</span>'
         else:
@@ -49,11 +53,20 @@ class TerminalWindow(QDialog):
         self.output.appendHtml(colored)
 
     def flush(self):
+        """Do nothing; present for compatibility with file-like streams."""
         pass
 
 class SSHApp(QWidget):
+    """
+    Main window of the USD Transfer tool.
+
+    Connects to the server over SSH and lets the user pick project / sequence /
+    shot / version combinations as command lines. The commands are run remotely in
+    a background worker and the results are downloaded to a local directory.
+    """
     
     def __init__(self):
+        """Create the backend objects, build the UI and prefill the saved credentials."""
         super().__init__()
 
         # backend & data manager
@@ -207,6 +220,7 @@ class SSHApp(QWidget):
         self.load_user()
     
     def toggle_terminal(self):
+        """Show or hide the log terminal window and update the button label."""
         if not hasattr(self, "terminal_window"):
             self.terminal_window = TerminalWindow(self)
 
@@ -220,12 +234,14 @@ class SSHApp(QWidget):
         
     # --- resize overlay to full window ---
     def resizeEvent(self, event):
+        """Keep the progress overlay covering the whole window when it is resized."""
         self.progress_frame.setGeometry(0, 0, self.width(), self.height())
         self.progress_frame.raise_()
         return super().resizeEvent(event)
 
     # --- user file load/save ---
     def load_user(self):
+        """Fill the host, username and password fields from the .private file and check the Lights filter."""
         creds = load_private_file()
         self.host_input.setText(creds.get("HOST", ""))
         self.username_input.setText(creds.get("USERNAME", ""))
@@ -233,12 +249,19 @@ class SSHApp(QWidget):
         self.checkbox_lights.setChecked(True)
 
     def save_user(self):
+        """Save the host, username and password fields to the .private file."""
         save_private_file(self.host_input.text().strip(),
                           self.username_input.text().strip(),
                           self.password_input.text().strip())
 
     # --- connect / disconnect ---
     def toggle_connection(self):
+        """
+        Connect to the server, or disconnect from it if already connected.
+
+        On connect, the credential fields are locked, the operator controls are enabled
+        and the remote folder structure is loaded. Disconnecting reverts this.
+        """
         if not self.backend.connected:
             try:
                 host = self.host_input.text().strip()
@@ -266,6 +289,11 @@ class SSHApp(QWidget):
 
     # --- folder loader (starts worker thread) ---
     def start_folder_load(self):
+        """
+        Start a background worker that reloads the remote folder structure.
+
+        Does nothing if such a worker is already running.
+        """
         # prevent multiple workers
         if self.folder_worker and self.folder_worker.isRunning():
             return
@@ -285,22 +313,26 @@ class SSHApp(QWidget):
         self.folder_worker.start()
 
     def on_folder_progress(self, current, total, project_name):
+        """Update the progress overlay while the folder worker scans the projects."""
         # update overlay and keep UI responsive
         #self.terminal_window.log_message(f"Processing {current} / {total}: {project_name}", False)
         self.update_progress_overlay(current, total, f"Processing {project_name} ({current}/{total})")
 
     def on_folder_finished(self):
+        """Fill the project list and hide the overlay once the folder worker is done."""
         # folder worker finished - populate UI combos from data manager
         self.populate_project_combo()
         self.hide_progress_overlay()
         QMessageBox.information(self, "Done", "Loaded remote folder structure.")
 
     def on_folder_error(self, msg):
+        """Show an error reported by the folder worker in the terminal window."""
         self.terminal_window.log_message(msg, True)
         #self.hide_progress_overlay()
         #QMessageBox.warning(self, "Folder Load Error", msg)
 
     def populate_project_combo(self):
+        """Refill the project combo box from the loaded project list."""
         self.project_combo.clear()
         projects = self.data.projects
         if projects:
@@ -308,6 +340,7 @@ class SSHApp(QWidget):
 
     # --- combo cascade callbacks (frontend only triggers data_manager calls) ---
     def on_project_changed(self, project):
+        """Refill the sequence combo box for the selected project, loading the sequences if not cached."""
         self.sequence_combo.clear()
         if not project:
             return
@@ -315,6 +348,7 @@ class SSHApp(QWidget):
         self.sequence_combo.addItems(sequences)
 
     def on_sequence_changed(self, sequence):
+        """Refill the shot combo box for the selected sequence, loading the shots if not cached."""
         self.shot_combo.clear()
         project = self.project_combo.currentText()
         if not project or not sequence:
@@ -323,6 +357,7 @@ class SSHApp(QWidget):
         self.shot_combo.addItems(shots)
 
     def on_shot_changed(self, shot):
+        """Refill the version combo box for the selected shot, loading the versions if not cached."""
         self.version_combo.clear()
         project = self.project_combo.currentText()
         sequence = self.sequence_combo.currentText()
@@ -333,6 +368,7 @@ class SSHApp(QWidget):
 
     # --- progress overlay helpers ---
     def show_progress_overlay(self, label, maximum):
+        """Show the progress overlay with the given label and the bar reset to 0 of maximum."""
         self.progress_label.setText(label)
         self.progress_bar.setMaximum(maximum if maximum > 0 else 1)
         self.progress_bar.setValue(0)
@@ -340,6 +376,7 @@ class SSHApp(QWidget):
         QApplication.processEvents()
 
     def update_progress_overlay(self, current, total, label=None):
+        """Update the progress bar and, if given, the label of the overlay."""
         if total > 0:
             self.progress_bar.setMaximum(total)
             self.progress_bar.setValue(current)
@@ -348,11 +385,18 @@ class SSHApp(QWidget):
         QApplication.processEvents()
 
     def hide_progress_overlay(self):
+        """Hide the progress overlay."""
         self.progress_frame.setVisible(False)
         QApplication.processEvents()
 
     # --- add line to text area ---
     def add_command_line(self):
+        """
+        Append a command line for the current selection to the command text box.
+
+        The line has the form "<project> <sequence> <shot> <version> [format]"; the
+        format is only added when it is not "Original".
+        """
         proj = self.project_combo.currentText()
         seq = self.sequence_combo.currentText()
         shot = self.shot_combo.currentText()
@@ -366,10 +410,18 @@ class SSHApp(QWidget):
         self.text_edit.append(cmd)
 
     def empty_commands_text_callback(self):
+        """Enable the Run button only while the command text box is not empty."""
         self.run_button.setDisabled(len(self.text_edit.toPlainText()) == 0)
 
     # --- Run commands via worker thread (no logic in UI) ---
     def start_run_commands(self):
+        """
+        Validate the inputs and run the entered commands in a background worker.
+
+        Requires an open connection, an existing local directory and at least one
+        command line; otherwise a warning is shown. Does nothing while a run is already
+        in progress.
+        """
         if self.command_worker and self.command_worker.isRunning():
             return
 
@@ -402,25 +454,30 @@ class SSHApp(QWidget):
         self.command_worker.start()
 
     def on_command_progress(self, current, total):
+        """Update the overlay and the log after a command has been processed."""
         self.update_progress_overlay(current, total, f"Processed {current} / {total}")
         self.terminal_window.log_message(f"Processed {current} / {total}", False)
 
     def on_command_log(self, msg):
+        """Forward a log message from the worker to the terminal window and to stdout."""
         self.terminal_window.log_message(msg, False)
         print(msg)
 
     def on_command_finished(self):
+        """Hide the overlay and report that all commands were processed."""
         self.hide_progress_overlay()
         self.terminal_window.log_message("Finished.\nAll commands processed successfully.", False)
         QMessageBox.information(self, "Finished", "All commands processed successfully.")
 
     def on_command_error(self, msg):
+        """Hide the overlay and report a worker error in the log and in a message box."""
         self.hide_progress_overlay()
         self.terminal_window.log_message(msg, True)
         QMessageBox.warning(self, "Command Error", msg)
 
     # --- browse directory ---
     def browse_directory(self):
+        """Let the user pick the local export directory in a folder dialog."""
         directory = QFileDialog.getExistingDirectory(self, "Select Directory")
         if directory:
             self.local_dir_input.setText(directory)

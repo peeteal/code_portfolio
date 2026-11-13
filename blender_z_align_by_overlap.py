@@ -31,10 +31,12 @@ def bbox_xy(verts):
     return min(xs), min(ys), max(xs), max(ys)
 
 def in_cell(v, bounds):
+    """Return True if the XY position of v lies within bounds = (minx, miny, maxx, maxy)."""
     minx, miny, maxx, maxy = bounds
     return (minx <= v.x <= maxx) and (miny <= v.y <= maxy)
 
 def subdivide_bounds(bounds):
+    """Split bounds = (minx, miny, maxx, maxy) into its four quadrants."""
     minx, miny, maxx, maxy = bounds
     cx = (minx + maxx) / 2.0
     cy = (miny + maxy) / 2.0
@@ -89,6 +91,7 @@ def quadtree_match(bounds, static_pts, moving_pts, depth, tol_xy, pairs):
             quadtree_match(child, s_child, m_child, depth + 1, tol_xy, pairs)
 
 def median(values):
+    """Return the median of values, or None if values is empty."""
     if not values:
         return None
     vals = sorted(values)
@@ -100,6 +103,16 @@ def median(values):
         return 0.5 * (vals[mid-1] + vals[mid])
 
 def align_by_xy_vertices(static_obj, moving_obj, tol_xy=1e-4):
+    """
+    Move moving_obj along world Z so that it lines up with static_obj.
+
+    Vertices of the two meshes that share the same XY position (within tol_xy) are
+    paired with a quadtree search, and the median Z difference of the pairs is
+    applied to moving_obj as a world-space translation. Nothing is moved when fewer
+    than min_pairs_required pairs are found.
+
+    Returns True if the translation was applied, False otherwise.
+    """
     static_verts = world_verts(static_obj)
     moving_verts = world_verts(moving_obj)
     if not static_verts or not moving_verts:
@@ -149,6 +162,13 @@ def align_by_xy_vertices(static_obj, moving_obj, tol_xy=1e-4):
 
 # ----------------- Auto-detect selection -----------------
 def align_z_selected():
+    """
+    Align the active mesh to another selected mesh along Z.
+
+    Expects at least two selected mesh objects. The active (last selected) one is
+    moved; the first other selected mesh stays fixed. If the selection does not
+    fit, a hint is printed and nothing is changed.
+    """
     sel = [o for o in bpy.context.selected_objects if o.type == 'MESH']
     if len(sel) < 2:
         print("Select two mesh objects (static and moving). Make the MOVING mesh the active object (last selected).")

@@ -12,6 +12,7 @@ class SSHBackend:
     """
 
     def __init__(self):
+        """Create the backend and connect right away with the credentials from the .private file."""
         self.ssh = None
         self.sftp = None
         self.connected = False
@@ -36,6 +37,7 @@ class SSHBackend:
         print("SSH Connected")
 
     def disconnect(self):
+        """Close the SFTP and SSH sessions (errors are ignored) and mark the backend as disconnected."""
         if self.sftp:
             try:
                 self.sftp.close()

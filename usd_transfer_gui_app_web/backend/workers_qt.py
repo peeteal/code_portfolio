@@ -12,11 +12,19 @@ class FolderLoaderWorker(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, data_manager, root_path="/upp/servers/vfxstore2/VFXstore/PROJECTS/"):
+        """Store the data manager to fill and the remote root path to scan."""
         super().__init__()
         self.data_manager = data_manager
         self.root_path = root_path
 
     def run(self):
+        """
+        Load the whole project -> sequence -> shot -> version tree into the data manager.
+
+        Emits progress(index, total, project) for every project and finished() when the
+        scan is complete. error(message) is emitted for a project without accessible
+        sequences, for a shot without versions and for an unexpected failure.
+        """
         log = []
         try:
             projects = self.data_manager.load_projects(self.root_path)
@@ -56,6 +64,14 @@ class CommandRunnerWorker(QThread):
     error = pyqtSignal(str)
 
     def __init__(self, backend: SSHBackend, commands: str, local_dir, remote_script="/home/svc_vpvfxtransfer_ro/dev/usd_transfer/run.sh"):
+        """
+        Store the run configuration.
+
+        - backend: connected SSHBackend used to create an SSH client per command.
+        - commands: command lines "<project> <sequence> <shot> <version> [usd|usda]".
+        - local_dir: local directory the exported files are downloaded to.
+        - remote_script: script on the server that runs the export.
+        """
         super().__init__()
         self.backend = backend
         self.commands = commands[:]
@@ -75,6 +91,15 @@ class CommandRunnerWorker(QThread):
                 return candidate, str(counter)
 
     def run(self):
+        """
+        Run every command on the server and download its output.
+
+        For each command line, a temporary SSH/SFTP session is opened and the remote
+        script is run with a unique output folder suffix. The produced folder is then
+        downloaded to local_dir and removed from the server. Emits log and progress
+        signals along the way and finished() when all commands are done. On the first
+        failed command or download, error(message) is emitted and the run stops.
+        """
         total = len(self.commands)
         if total == 0:
             self.finished.emit()

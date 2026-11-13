@@ -2,6 +2,7 @@ import unreal
 
 
 def get_level_sequence_actor() -> unreal.LevelSequenceActor:
+    """Return the first LevelSequenceActor found in the current level, or None."""
     for actor in unreal.EditorLevelLibrary.get_all_level_actors():
         if isinstance(actor, unreal.LevelSequenceActor):
             return actor
@@ -9,9 +10,18 @@ def get_level_sequence_actor() -> unreal.LevelSequenceActor:
 
 @unreal.uclass()
 class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
+    """
+    Blueprint function library for the turntable rendering system.
+
+    Covers creating the temporary turntable level and sequence from their templates,
+    swapping the target and reference objects, finding the turntable camera and
+    ground bindings, syncing camera settings to Sequencer and queueing Movie Render
+    Queue jobs.
+    """
 
     @unreal.ufunction(static=True)
     def duplicate_turntable_level():
+        """Duplicate the turntable showroom template level to temp_turntable_level and save it."""
         # unreal.EditorAssetLibrary.delete_asset(
         #     "/UPPTechviz/Tools/Rendering/TurntableSystemV3/temp_turntable_level")
         original_path = "/Script/Engine.World'/UPPTechviz/Tools/Rendering/TurntableSystemV3/template/Turntable_Showroom_Template.Turntable_Showroom_Template'"
@@ -23,6 +33,11 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, ret=unreal.LevelSequence)
     def open_turntable_level_sequence():
+        """
+        Create a fresh temp_turntable_seq from the sequence template and open it in Sequencer.
+
+        An existing temp_turntable_seq asset is deleted first. Returns the new sequence.
+        """
         # Load the original asset
         unreal.EditorAssetLibrary.delete_asset(
             "/UPPTechviz/Tools/Rendering/TurntableSystemV3/temp_turntable_seq")
@@ -38,6 +53,14 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, params=[str, str, bool], ret=unreal.LevelSequence)
     def open_turntable_level_sequence_at_asset(sequence_path: str, path: str, open: bool = True):
+        """
+        Duplicate a level sequence to the given asset path, replacing an asset already there.
+
+        - sequence_path: sequence to duplicate; the turntable sequence template is used if empty.
+        - path: destination asset path.
+        - open: open the new sequence in Sequencer when True.
+        Returns the new sequence.
+        """
         # Load the original asset
 
         if unreal.EditorAssetLibrary.does_asset_exist(path):
@@ -61,17 +84,30 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True)
     def delete_turntable_level_sequence():
+        """Delete the temp_turntable_seq asset if it exists."""
         if unreal.EditorAssetLibrary.does_asset_exist("/UPPTechviz/Tools/Rendering/TurntableSystemV3/temp_turntable_seq"):
             unreal.EditorAssetLibrary.delete_asset(
                 "/UPPTechviz/Tools/Rendering/TurntableSystemV3/temp_turntable_seq")
 
     @unreal.ufunction(static=True)
     def delete_turntable_level():
+        """Delete the temp_turntable_level asset."""
         unreal.EditorAssetLibrary.delete_asset(
             "/UPPTechviz/Tools/Rendering/TurntableSystemV3/temp_turntable_level")
 
     @unreal.ufunction(static=True, params=[str, bool])
     def replace_target_actor(preview_asset_path: str, spawnable: bool):
+        """
+        Replace the actor behind the "TargetActor" binding of the current sequence.
+
+        Spawns the asset at preview_asset_path, adds it to the sequence as a spawnable
+        and points the TargetActor binding at it, so that the tracks on TargetActor
+        keep driving the new actor. The first transform track of both bindings is
+        removed and the previously bound actor is destroyed. With spawnable=False,
+        both bindings are converted to possessables.
+
+        Does nothing if the sequence has no TargetActor binding.
+        """
         seq: unreal.LevelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
         seq_actor = get_level_sequence_actor()
         bindings = unreal.MovieSceneSequenceExtensions.get_bindings(seq)
@@ -118,6 +154,15 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, params=[unreal.LevelSequence, unreal.MovieSceneBindingProxy, str, bool])
     def spawn_reference_object(seq: unreal.LevelSequence, camera_bind: unreal.MovieSceneBindingProxy, preview_asset_path: str, spawnable: bool):
+        """
+        Spawn the asset at preview_asset_path and set it as the reference object of the turntable camera.
+
+        The spawned actor is made movable and added to seq. Its binding is written as
+        the default value of the "ReferenceObject" actor reference track on camera_bind
+        (the track and its section are created if missing). The new binding is then
+        converted to a spawnable or a possessable, depending on `spawnable`, and its
+        transform track is removed.
+        """
         # seq: unreal.LevelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
         bindings = unreal.MovieSceneSequenceExtensions.get_bindings(seq)
         # for bind in bindings:
@@ -174,12 +219,14 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, params=[unreal.MovieSceneBindingProxy])
     def convert_to_possessable(cam_binding: unreal.MovieSceneBindingProxy):
+        """Convert the given binding to a possessable and refresh the current sequence."""
         subsys = unreal.LevelSequenceEditorSubsystem()
         subsys.convert_to_possessable(cam_binding)
         unreal.LevelSequenceEditorBlueprintLibrary.refresh_current_level_sequence()
 
     @unreal.ufunction(static=True, params=[unreal.LevelSequence], ret=unreal.TurntableCineCamera)
     def get_turntable_camera(seq: unreal.LevelSequence):
+        """Return the actor of the first TurntableCineCamera spawnable binding in seq, or None."""
         # if seq is None:
         # seq = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
         for bind in seq.get_bindings():
@@ -194,6 +241,12 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
     # If seq == None, returns from this sequence
     @unreal.ufunction(static=True, params=[unreal.LevelSequence], ret=unreal.MovieSceneBindingProxy)
     def get_turntable_camera_binding(seq: unreal.LevelSequence):
+        """
+        Return the first binding in seq whose spawnable template is a TurntableCineCamera.
+
+        Uses the currently open sequence if seq is None. Returns an empty
+        MovieSceneBindingProxy if there is no such binding.
+        """
         if seq is None:
             seq = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
         for bind in seq.get_bindings():
@@ -206,6 +259,7 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, params=[unreal.MovieSceneBindingProxy], ret=unreal.Object)
     def get_object_from_binding(bind: unreal.MovieSceneBindingProxy):
+        """Return the first object bound to the binding in the currently open level sequence."""
         seq: unreal.LevelSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
         id = seq.get_binding_id(bind)
         obj = unreal.LevelSequenceEditorBlueprintLibrary.get_bound_objects(id)[
@@ -214,6 +268,11 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, params=[unreal.LevelSequence], ret=unreal.Object)
     def get_actor_from_binding_with_grid_tag(sequence: unreal.LevelSequence):
+        """
+        Return the actor bound to the binding named "ground" or "BP_ground" in the sequence.
+
+        Despite the name, the binding is matched by its name, not by a 'Grid' tag.
+        """
         bindings = sequence.get_bindings()
         for binding in bindings:
             binding: unreal.MovieSceneBindingProxy
@@ -301,6 +360,11 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, params=[unreal.LevelSequence], ret=unreal.MovieSceneBindingProxy)
     def get_binding_with_grid_tag(sequence: unreal.LevelSequence):
+        """
+        Return the binding named "ground" or "BP_ground" in the sequence.
+
+        Despite the name, the binding is matched by its name, not by a 'Grid' tag.
+        """
         bindings = sequence.get_bindings()
         for binding in bindings:
             binding: unreal.MovieSceneBindingProxy
@@ -316,6 +380,13 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, ret=unreal.Object)
     def get_actor_with_grid_tag():
+        """
+        Return the turntable ground actor, or None if it cannot be found.
+
+        Searches the level for an actor tagged 'Grid' or named "ground" / "BP_ground".
+        If there is none, falls back to the object bound to a binding with one of those
+        names in the currently open sequence.
+        """
         # def get_actor_with_grid_tag(sequence: unreal.LevelSequence):
         # Get all actors in the current level
         all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
@@ -452,6 +523,21 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
         binding: unreal.MovieSceneBindingProxy,
         level_sequence: unreal.LevelSequence = None,
     ):
+        """
+        Copy the current settings of the turntable camera actor into its Sequencer
+        binding as track defaults.
+
+        Writes the actor transform and the CameraDistance, CameraRotation,
+        CameraRotationOffset, CameraTilt, CameraFocalLength, CameraTargetLocation and
+        ActorName properties as the default (unkeyed) channel values of the matching
+        tracks on the binding. Tracks and sections are created where needed, and a
+        property that fails is skipped with a warning.
+
+        - binding: binding to write to; if None, it is looked up from the actor.
+        - level_sequence: sequence to use; defaults to the currently open one.
+        Returns the binding. Raises ValueError for an invalid actor and RuntimeError if
+        no sequence is open or no binding can be resolved.
+        """
         print("sync start")
 
         if not actor or not isinstance(actor, unreal.Actor):
@@ -464,6 +550,7 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
             raise RuntimeError("No current LevelSequence is open.")
 
         def _normalize_name(value):
+            """Return value as a lowercase string without spaces, underscores and hyphens ("" for None)."""
             if value is None:
                 return ""
             return (
@@ -475,6 +562,7 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
             )
 
         def _track_name_candidates(prop_name: str):
+            """Return the set of normalized names a track for prop_name may go by."""
             # Accept both the raw property name and a spaced/display-style variant.
             spaced = []
             if prop_name:
@@ -483,6 +571,10 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
             return {_normalize_name(prop_name), *(_normalize_name(x) for x in spaced if x)}
 
         def _track_matches_property(track, prop_name: str):
+            """
+            Return True if the property name, property path, display name or object name of
+            the track matches prop_name.
+            """
             wanted = _track_name_candidates(prop_name)
 
             candidates = []
@@ -514,6 +606,12 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
             return False
 
         def _ensure_track(binding_proxy, track_cls, prop_name=None):
+            """
+            Return a track of type track_cls on the binding, creating one if needed.
+
+            An existing track matching prop_name is preferred, then the first existing
+            track of that type. A newly created track is bound to prop_name if one is given.
+            """
             tracks = binding_proxy.find_tracks_by_type(track_cls)
 
             if prop_name is not None:
@@ -538,6 +636,7 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
             return track
 
         def _ensure_section(track):
+            """Return the first section of the track, adding a new one if it has none."""
             sections = track.get_sections()
             if sections:
                 print(
@@ -547,6 +646,10 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
             return track.add_section()
 
         def _set_single_channel_default(section, value, label=""):
+            """
+            Set the default value of the first channel of the section and print the value
+            read back. label is only used for logging.
+            """
             channels = section.get_all_channels()
             if not channels:
                 raise RuntimeError("Section has no channels.")
@@ -564,6 +667,7 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
                 print(f"[read ] {label} default readback failed: {e}")
 
         def _set_vector3_defaults(section, vec, label=""):
+            """Set the defaults of the first three channels of the section to vec.x, vec.y and vec.z."""
             channels = section.get_all_channels()
             if len(channels) < 3:
                 raise RuntimeError(
@@ -585,6 +689,10 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
                 print(f"[read ] {label} vector default readback failed: {e}")
 
         def _set_transform_defaults(section, xform: unreal.Transform):
+            """
+            Write xform as the defaults of the nine transform channels of the section
+            (location, rotation as Euler angles, scale).
+            """
             channels = section.get_all_channels()
             if len(channels) < 9:
                 raise RuntimeError(
@@ -625,6 +733,9 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
                 print(f"[read ] Transform default readback failed: {e}")
 
         def _sync_float(prop_name: str):
+            """
+            Write the float property prop_name of the actor as the default of a float track on the binding.
+            """
             value = float(actor.get_editor_property(prop_name))
             print(f"[prop ] float {prop_name} = {value}")
             track = _ensure_track(
@@ -634,6 +745,9 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
             _set_single_channel_default(section, value, prop_name)
 
         def _sync_bool(prop_name: str):
+            """
+            Write the bool property prop_name of the actor as the default of a bool track on the binding.
+            """
             value = bool(actor.get_editor_property(prop_name))
             print(f"[prop ] bool {prop_name} = {value}")
             track = _ensure_track(
@@ -654,6 +768,10 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
         #     _set_vector3_defaults(section, value, prop_name)
 
         def _sync_vector(prop_name: str):
+            """
+            Write the vector property prop_name of the actor as the channel defaults of a
+            double vector track on the binding.
+            """
             vec = actor.get_editor_property(prop_name)
 
             x = float(vec.x)
@@ -687,6 +805,9 @@ class UPPTurntableLibrary(unreal.BlueprintFunctionLibrary):
                 f"[write] {prop_name} default = ({channels[0].get_default()}, {channels[1].get_default()}, {channels[2].get_default()})")
 
         def _sync_string(prop_name: str):
+            """
+            Write the string property prop_name of the actor as the default of a string track on the binding.
+            """
             value = str(actor.get_editor_property(prop_name))
             print(f"[prop ] string {prop_name} = {value}")
             track = _ensure_track(

@@ -2,6 +2,23 @@ import bpy, os, math
 from mathutils import Vector
 #TODO: BAKE TRANSFORMS BEFORE BAKING TEXTURE IN THE FUTURE!
 def bake_texture(meters_per_pixel = 0.5, output_dir = "//tmp_topdown"):
+    """
+    Render a top-down orthographic PNG of every selected mesh object.
+
+    Each object is rendered separately at 2048x2048 from a temporary orthographic
+    camera placed above the center of its bounding box. meters_per_pixel sets the
+    world size of one pixel, so all renders share the same scale; an object larger
+    than the camera view is cropped (a warning is printed). For the render, the
+    materials are temporarily replaced with emission copies driven by their
+    base-color texture (or color), which gives an unlit result on a transparent
+    background.
+
+    Images are saved to output_dir as <object name>_topdown.png. Object origins are
+    moved to their bounding-box centers. The temporary camera and materials are
+    removed and the scene render settings restored afterwards.
+
+    Raises RuntimeError if no mesh object is selected.
+    """
     # ---------------- USER SETTINGS ----------------
     IMAGE_SIZE = 2048                     # output resolution (square)
     #OUTPUT_DIR = "//tmp_topdown"         # Blender-relative (//) or absolute
@@ -50,6 +67,7 @@ def bake_texture(meters_per_pixel = 0.5, output_dir = "//tmp_topdown"):
 
     # helper: world bbox (min,max) for an object
     def world_bbox_minmax(obj):
+        """Return the world-space bounding box of obj as (min, max) Vectors."""
         local_bbox = [Vector(b) for b in obj.bound_box]
         world_coords = [obj.matrix_world @ v for v in local_bbox]
         mins = Vector((min([v.x for v in world_coords]),
@@ -449,6 +467,7 @@ if __name__ == "__main__":
 
     # ---------------- report + bake ----------------
     def names_list(objs):
+        """Return the names of the given objects as a comma-separated string."""
         return ", ".join([o.name for o in objs])
 
     print(f"Resolved and selected objects ({len(all_resolved_objs)}): {names_list(all_resolved_objs)}")

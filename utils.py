@@ -155,6 +155,7 @@ def _get_blueprint_folder_from_actor(actor: unreal.Actor) -> str:
 
 
 def _ensure_vats_folder(folder: str) -> str:
+    """Return the path of the 'vats' subfolder of folder, creating it if it does not exist."""
     dest = folder.rstrip('/') + '/vats'
     if not unreal.EditorAssetLibrary.does_directory_exist(dest):
         unreal.EditorAssetLibrary.make_directory(dest)
@@ -162,6 +163,10 @@ def _ensure_vats_folder(folder: str) -> str:
 
 
 def _next_versioned_name(dest_folder: str, base_name: str) -> str:
+    """
+    Return base_name with the next free version suffix (_v001, _v002, ...) among the
+    assets in dest_folder.
+    """
     assets = unreal.EditorAssetLibrary.list_assets(dest_folder, recursive=False)
     pattern = re.compile(re.escape(base_name) + r'_v(\d{3})$')
     maxv = 0
@@ -195,6 +200,14 @@ def _convert_actor_to_static(actor: unreal.Actor, dest_folder: str) -> list:
 
 
 def convert_selected_to_static():
+    """
+    Prepare the selected Blueprint actors for the skeletal-to-static mesh conversion.
+
+    For each selected actor, picks its skeletal mesh component (preferring one with
+    'body' in its name), ensures a 'vats' folder in the parent of the Blueprint
+    folder and computes the next versioned asset name. The conversion call itself
+    is currently disabled, so the function only logs what would be converted.
+    """
     selected = unreal.EditorLevelLibrary.get_selected_level_actors()
     if not selected:
         unreal.log_warning('No actors selected. Please select Blueprint actor instances in the level.')
@@ -277,6 +290,7 @@ def get_object_world_transform(obj: unreal.Object) -> unreal.Transform:
 
 
 def get_binding_transform(binding: unreal.MovieSceneBindingProxy):
+    """Return the world transform of the object bound to the given Sequencer binding."""
     obj = resolve_binding_object(binding)
     transform = get_object_world_transform(obj)
     unreal.log(f"DEBUG: binding transform: {transform}")
@@ -390,11 +404,17 @@ def copy_transform_track_between_bindings(src_binding: unreal.MovieSceneBindingP
 
 
 def find_folder_for_binding(level_sequence: unreal.LevelSequence, binding):
+    """
+    Return the Sequencer folder that contains the binding, or None if it is not in a folder.
+
+    All root folders of the sequence are searched recursively.
+    """
     # movie_scene = level_sequence.get_movie_scene()
     # level_sequence: unreal.MovieSceneSequence
     roots = level_sequence.get_root_folders_in_sequence()
 
     def recurse(folder):
+        """Return folder, or the first of its subfolders, that contains the binding, else None."""
         if binding in unreal.MovieSceneFolderExtensions.get_child_object_bindings(folder):
             return folder
         for child in unreal.MovieSceneFolderExtensions.get_child_folders(folder):

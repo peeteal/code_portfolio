@@ -19,6 +19,12 @@ import json
 from math import ceil
 
 def read_image(path):
+    """
+    Load an image from disk as a 3-channel BGR array.
+
+    Grayscale images are expanded to BGR and an alpha channel is dropped.
+    Raises FileNotFoundError if the file cannot be read.
+    """
     img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     if img is None:
         raise FileNotFoundError(path)
@@ -29,6 +35,13 @@ def read_image(path):
     return img
 
 def non_empty_bbox(img, thresh=8):
+    """
+    Return the bounding box (x0, y0, x1, y1) of the non-empty content of img.
+
+    A pixel counts as content when its brightest channel exceeds thresh. The box is
+    end-exclusive ([x0:x1), [y0:y1)). If no pixel passes the threshold, the full
+    image extent is returned.
+    """
     mask = (img.max(axis=2) > thresh).astype(np.uint8)
     ys, xs = np.where(mask)
     if len(xs) == 0:
@@ -39,6 +52,7 @@ def non_empty_bbox(img, thresh=8):
     return x0, y0, x1, y1
 
 def crop_to_bbox(img, bbox):
+    """Return a copy of img cropped to bbox = (x0, y0, x1, y1), end-exclusive."""
     x0,y0,x1,y1 = bbox
     return img[y0:y1, x0:x1].copy()
 
@@ -186,6 +200,17 @@ def phase_correlate_subpixel_on_full_overlap(fullA_gray, fullB_gray, dx_int, dy_
     return dx_res, dy_res, resp
 
 def make_canvas_and_place(img_a, img_b, shift_ab, base_canvas_size=4096):
+    """
+    Place img_a and img_b on two black canvases of equal size for comparison.
+
+    img_a is centered on a base_canvas_size square canvas and img_b is offset from
+    it by shift_ab = (dx, dy), rounded to whole pixels (positive = right/down).
+    Both images are expected to have the same size. The canvas is enlarged when the
+    shifted image would not fit.
+
+    Returns (canvasA, canvasB, posA, posB), where posA/posB are the top-left (x, y)
+    positions of the images on their canvases.
+    """
     h, w = img_a.shape[:2]
     sx, sy = int(round(shift_ab[0])), int(round(shift_ab[1]))
     ax0 = (base_canvas_size - w)//2
@@ -217,6 +242,15 @@ def make_canvas_and_place(img_a, img_b, shift_ab, base_canvas_size=4096):
     return canvasA, canvasB, (ax0,ay0), (bx0,by0)
 
 def compute_diff_and_overlap(canvas_a, canvas_b):
+    """
+    Build visualizations comparing two placed canvases.
+
+    Returns (diff_vis, comp, diff):
+    - diff_vis: grayscale absolute difference, normalized to 0..255,
+    - comp: false-color overlay (red from canvas_a, green from canvas_b, blue is the
+      average brightness of both),
+    - diff: raw per-channel absolute difference.
+    """
     diff = cv2.absdiff(canvas_a, canvas_b)
     diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
     if diff_gray.max() > 0:
@@ -233,6 +267,7 @@ def compute_diff_and_overlap(canvas_a, canvas_b):
     return diff_vis, comp, diff
 
 class Options():
+    """Alignment settings for process(), taken from the parsed command-line arguments."""
     imgA = None
     imgB = None
     threshold = None
@@ -244,6 +279,7 @@ class Options():
     output_imgs = None
 
     def __init__(self, args):
+        """Copy the settings from args, the argparse namespace built in main()."""
         self.imgA = args.imgA
         self.imgB = args.imgB
         self.threshold = args.thresh
@@ -255,6 +291,22 @@ class Options():
         self.output_imgs = args.out_imgs
 
 def process(opts : Options):
+    """
+    Compute the translation that aligns image B to image A.
+
+    Both images are cropped to their non-empty content and an integer shift is
+    estimated with FFT cross-correlation on the crops. The shift is then optionally
+    refined on the full-resolution images with a local integer search
+    (opts.local_radius) and a subpixel phase correlation (opts.refine). B is resized
+    to the size of A first if the two differ.
+
+    Side effects: prints progress and overlap metrics (L1, MSE). With
+    opts.output_imgs set, writes <out_prefix>_diff.png, _overlap.png and
+    _absdiff.png. With opts.output_json set, writes {"dx", "dy"} to that file, with
+    dy negated.
+
+    Returns (dx_move, dy_move): how far to move B, in pixels (positive = right/down).
+    """
     A = read_image(opts.imgA)
     B = read_image(opts.imgB)
     if A.shape[:2] != B.shape[:2]:
@@ -348,6 +400,7 @@ def process(opts : Options):
     return dx_move, dy_move
 
 def main():
+    """Parse the command-line arguments and run the alignment."""
     ap = argparse.ArgumentParser(description="Robust aligner (crop+FFT+local+subpixel).")
     ap.add_argument("imgA")
     ap.add_argument("imgB")

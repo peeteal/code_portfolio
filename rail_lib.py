@@ -2,6 +2,7 @@ import unreal
 
 
 def rail_get_binding_guid_by_object(sequence: unreal.LevelSequence, actor: unreal.Actor) -> unreal.Guid:
+    """Return the GUID of the sequence binding the actor is bound to, or None if there is none."""
     for binding in sequence.get_bindings():
 
         id: unreal.MovieSceneObjectBindingID
@@ -13,6 +14,7 @@ def rail_get_binding_guid_by_object(sequence: unreal.LevelSequence, actor: unrea
 
 
 def rail_get_binding_by_guid(sequence: unreal.LevelSequence, guid: unreal.Guid) -> unreal.MovieSceneBindingProxy:
+    """Return the binding of the sequence with the given GUID, or None if not found."""
     for binding in sequence.get_bindings():
         if binding.get_id() == guid:
             return binding
@@ -20,6 +22,7 @@ def rail_get_binding_by_guid(sequence: unreal.LevelSequence, guid: unreal.Guid) 
 
 
 def rail_is_actor_spawnable(sequence: unreal.LevelSequence, actor: unreal.Actor) -> bool:
+    """Return True if the actor is bound to one of the spawnable bindings of the sequence."""
     for binding in sequence.get_spawnables():
         id: unreal.MovieSceneObjectBindingID
         id = sequence.get_binding_id(binding)
@@ -30,6 +33,7 @@ def rail_is_actor_spawnable(sequence: unreal.LevelSequence, actor: unreal.Actor)
 
 
 def rail_get_binding_for_actor(sequence: unreal.LevelSequence, actor: unreal.Actor) -> unreal.MovieSceneBindingProxy:
+    """Return the sequence binding the actor is bound to, or None if not found."""
     bindings = sequence.get_bindings()
 
     for binding in bindings:
@@ -263,23 +267,32 @@ def rail_attach_binding_to_rail_track(binding: unreal.MovieSceneBindingProxy, bi
 
 @unreal.uclass()
 class UPPRailLibrary(unreal.BlueprintFunctionLibrary):
+    """Blueprint function library with Sequencer and spline helpers for moving actors along rig rails."""
 
     @unreal.ufunction(static=True, ret=unreal.LevelSequence)
     def get_current_level_sequence():
+        """Return the level sequence currently open in Sequencer."""
         return unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
 
     @unreal.ufunction(static=True, params=[float, float], ret=float)
     def compute_target_time(distance: float, speed: float):
+        """Return the time in seconds needed to travel distance (meters) at speed (km/h)."""
         print(distance)
         print(speed)
         return ((distance) / (speed/3.6))
 
     @unreal.ufunction(static=True, ret=float)
     def get_current_seq_display_rate():
+        """
+        Return the duration of one frame of the current sequence in seconds.
+
+        Despite the name, this is the inverse of the display rate (denominator / numerator).
+        """
         return (unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence().get_display_rate().denominator / unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence().get_display_rate().numerator)
 
     @unreal.ufunction(static=True, ret=int)
     def get_sequence_real_time():
+        """Return the length of the playback range of the current sequence in seconds."""
         seq = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
         frame_range = seq.get_playback_range()
         current_range = frame_range.get_end_seconds() - frame_range.get_start_seconds()
@@ -287,6 +300,7 @@ class UPPRailLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, ret=int)
     def get_sequence_num_frames():
+        """Return the length of the playback range of the current sequence in frames."""
         seq = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
         frame_range = seq.get_playback_range()
         current_range = frame_range.get_end_frame() - frame_range.get_start_frame()
@@ -294,6 +308,7 @@ class UPPRailLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, ret=float)
     def compute_selected_spline_distance():
+        """Return the length in meters of the CineSplineComponent of the first selected level actor."""
         actor: unreal.Actor = unreal.EditorLevelLibrary.get_selected_level_actors()[0]
         spline: unreal.SplineComponent
         spline = actor.get_component_by_class(unreal.CineSplineComponent)
@@ -302,6 +317,7 @@ class UPPRailLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, params=[unreal.CineSplineComponent])
     def draw_spline_length_labels(spline_comp: unreal.CineSplineComponent):
+        """Draw a debug label at every spline point showing its distance along the spline (cm and m)."""
         total_length = spline_comp.get_spline_length()
         num_points = spline_comp.get_number_of_spline_points()
 
@@ -322,6 +338,12 @@ class UPPRailLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, params=[unreal.Actor])
     def invert_rail_spline_points(actor: unreal.Actor):
+        """
+        Reverse the direction of the spline of the actor.
+
+        The spline points are rebuilt in reverse order. Each point keeps its position,
+        rotation, scale and type, and its tangent is flipped.
+        """
         # actor = unreal.EditorLevelLibrary.get_selected_level_actors()[0]
         spline: unreal.SplineComponent
         spline = actor.get_component_by_class(unreal.SplineComponent)
@@ -355,6 +377,17 @@ class UPPRailLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True, params=[unreal.Actor])
     def attach_this_and_selected_actors(this: unreal.Actor):
+        """
+        Attach the selected bindings and level actors to a rail actor in the current sequence.
+
+        `this` (the rail actor) is added to the sequence as a spawnable if it is not in
+        it yet. Every binding selected in Sequencer and every actor selected in the
+        level (added to the sequence if needed) is then attached to it with
+        rail_attach_binding_to_rail_track(). The attached actors are moved to the world
+        origin first, as a workaround for relative locations.
+
+        Does nothing if no level sequence is open.
+        """
         actor_system: unreal.EditorActorSubsystem
         actor_system = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 
@@ -401,6 +434,14 @@ class UPPRailLibrary(unreal.BlueprintFunctionLibrary):
 
     @unreal.ufunction(static=True)
     def convert_actor():
+        """
+        Put every selected level actor on its own rig rail in the current level sequence.
+
+        Each selected actor is tagged "RailBlend", moved to the world origin and added
+        to the sequence as a spawnable. A spawnable RigRail with a straight 100 m
+        spline and hidden rail visualization is created at the original location of
+        the actor, and the actor is attached to it with an unbounded attach track.
+        """
         actor_system: unreal.EditorActorSubsystem
         actor_system = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 

@@ -10,6 +10,11 @@ class FolderLoaderWorker:
 
     def __init__(self, data_manager, root_path="/upp/servers/vfxstore2/VFXstore/PROJECTS/",
                  on_progress=None, on_log=None, on_error=None, on_finished=None):
+        """
+        Store the data manager to fill, the remote root path to scan and the optional
+        callbacks: on_progress(index, total, project), on_log(message),
+        on_error(message) and on_finished().
+        """
         self.data_manager = data_manager
         self.root_path = root_path
 
@@ -20,11 +25,19 @@ class FolderLoaderWorker:
         self.on_finished = on_finished or (lambda *a, **k: None)
 
     def start(self):
+        """Run the worker in a daemon thread and return the thread."""
         t = threading.Thread(target=self.run, daemon=True)
         t.start()
         return t
 
     def run(self):
+        """
+        Load the whole project -> sequence -> shot -> version tree into the data manager.
+
+        Calls on_progress(index, total, project) for every project and on_finished()
+        when the scan is complete. on_error(message) is called for a project without
+        accessible sequences, for a shot without versions and for an unexpected failure.
+        """
         try:
             projects = self.data_manager.load_projects(self.root_path)
             total = len(projects)
@@ -61,6 +74,16 @@ class CommandRunnerWorker:
     def __init__(self, backend: SSHBackend, commands, local_dir,
                  remote_script="/home/svc_vpvfxtransfer_ro/dev/usd_transfer/run.sh",
                  on_progress=None, on_log=None, on_error=None, on_finished=None):
+        """
+        Store the run configuration.
+
+        - backend: connected SSHBackend used to create an SSH client per command.
+        - commands: command lines "<project> <sequence> <shot> <version> [usd|usda]".
+        - local_dir: local directory the exported files are downloaded to.
+        - remote_script: script on the server that runs the export.
+        - on_progress(index, total), on_log(message), on_error(message), on_finished():
+          optional callbacks.
+        """
         self.backend = backend
         self.commands = commands[:]
         self.local_dir = local_dir
@@ -73,6 +96,7 @@ class CommandRunnerWorker:
         self.on_finished = on_finished or (lambda *a, **k: None)
 
     def start(self):
+        """Run the worker in a daemon thread and return the thread."""
         t = threading.Thread(target=self.run, daemon=True)
         t.start()
         return t
@@ -90,6 +114,15 @@ class CommandRunnerWorker:
                 return candidate, str(counter)
 
     def run(self):
+        """
+        Run every command on the server and download its output.
+
+        For each command line, a temporary SSH/SFTP session is opened and the remote
+        script is run with a unique output folder suffix. The produced folder is then
+        downloaded to local_dir and removed from the server. Calls on_log and
+        on_progress along the way and on_finished() when all commands are done. On the
+        first failed command or download, on_error(message) is called and the run stops.
+        """
         total = len(self.commands)
         if total == 0:
             self.on_finished()

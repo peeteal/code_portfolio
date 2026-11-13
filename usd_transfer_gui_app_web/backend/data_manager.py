@@ -13,6 +13,13 @@ class DataManager:
     """
 
     def __init__(self, backend, default_root: Optional[str] = None, manifest_filename: str = "renderManifest.bty_env_main.usd"):
+        """
+        Create a data manager with empty caches.
+
+        - backend: SSH backend used to list the remote folders.
+        - default_root: project root used when a method is called without a root.
+        - manifest_filename: file a version folder must contain to count as valid.
+        """
         self.backend = backend
         self.default_root = default_root
         self.manifest_filename = manifest_filename
@@ -35,6 +42,7 @@ class DataManager:
 
     # ---------------------- Helper utilities ----------------------
     def _composite_key(self, project: str, sequence: Optional[str] = None, shot: Optional[str] = None) -> str:
+        """Build a legacy cache key by concatenating project, sequence and shot (None parts are skipped)."""
         parts = [project or ""]
         if sequence is not None:
             parts.append(sequence)
@@ -52,6 +60,14 @@ class DataManager:
 
     # ---------------------- Loading methods (public API preserved) ----------------------
     def load_projects(self, root: Optional[str] = None, eager: bool = False) -> List[str]:
+        """
+        List the project folders under root and reset all caches to them.
+
+        With eager=True, the sequences, shots and versions of every project are loaded
+        as well and empty branches are pruned right away (can be slow for large trees).
+        Returns the sorted list of project folder names. Raises ValueError if no root
+        is available.
+        """
         root = root or self.default_root
         if not root:
             raise ValueError("root path must be provided to load_projects")
@@ -184,6 +200,13 @@ class DataManager:
         return shots
 
     def load_versions(self, project: str, sequence: str, shot: str, root: Optional[str] = None) -> List[str]:
+        """
+        List the versions of a shot that contain the manifest file, newest first.
+
+        The result is stored in the project tree and in the legacy cache. A shot
+        without valid versions is removed from the caches, together with its sequence
+        and project if they become empty. Raises ValueError if no root is available.
+        """
         root = root or self.default_root
         if not root:
             raise ValueError("root path must be provided to load_versions")
@@ -236,10 +259,12 @@ class DataManager:
 
     # ---------------------- Getters (convenience + single source of truth) ----------------------
     def get_projects(self) -> List[str]:
+        """Return the cached project names (no remote access)."""
         with self._lock:
             return list(self.project_tree.keys()) if self.project_tree else list(self.projects)
 
     def get_sequences(self, project: str) -> List[str]:
+        """Return the cached, sorted sequences of a project (empty list if none are cached)."""
         with self._lock:
             seqs = list(self.project_tree.get(project, {}).keys())
             if seqs:
@@ -247,6 +272,7 @@ class DataManager:
             return self.sequences_per_project.get(project, [])
 
     def get_shots(self, project: str, sequence: str) -> List[str]:
+        """Return the cached, sorted shots of a sequence (empty list if none are cached)."""
         with self._lock:
             shots = list(self.project_tree.get(project, {}).get(sequence, {}).keys())
             if shots:
@@ -255,6 +281,7 @@ class DataManager:
             return self.shots_per_sequence.get(key, [])
 
     def get_versions(self, project: str, sequence: str, shot: str) -> List[str]:
+        """Return the cached versions of a shot (empty list if none are cached)."""
         with self._lock:
             versions = self.project_tree.get(project, {}).get(sequence, {}).get(shot)
             if versions is not None:
@@ -264,6 +291,10 @@ class DataManager:
 
     # ---------------------- Filtering & housekeeping ----------------------
     def filter_empty_branches(self):
+        """
+        Remove shots without versions, sequences without shots and projects without
+        sequences from the project tree, then rebuild the legacy caches from it.
+        """
         with self._lock:
             new_tree: Dict[str, Dict[str, Dict[str, List[str]]]] = {}
             for project, sequences in self.project_tree.items():
@@ -299,5 +330,6 @@ class DataManager:
 
     # Optional utility for debugging/inspection
     def dump_tree(self) -> Dict[str, Any]:
+        """Return a copy of the project -> sequence -> shot -> versions tree."""
         with self._lock:
             return {p: {s: {sh: list(v) for sh, v in shots.items()} for s, shots in seqs.items()} for p, seqs in self.project_tree.items()}

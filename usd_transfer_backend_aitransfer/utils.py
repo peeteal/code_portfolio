@@ -9,6 +9,12 @@ from pxr import Sdf
 # EXR to HDR
 # --------------------------
 def exr_to_hdr_inplace(file_path: str):
+    """
+    Convert an .exr image to an .hdr file next to it and delete the original.
+
+    Returns the path of the new .hdr file. Raises ValueError if file_path is not an
+    .exr file and FileNotFoundError if it cannot be opened.
+    """
     if not file_path.lower().endswith(".exr"):
         raise ValueError("File must be a .exr")
     img_input = oiio.ImageInput.open(file_path)
@@ -35,10 +41,16 @@ def exr_to_hdr_inplace(file_path: str):
 # Path helpers (refactor of repeated code)
 # --------------------------
 def is_usd_like(path: str) -> bool:
+    """Return True if path has a .usd, .usda or .usdc extension (case-insensitive)."""
     _, ext = os.path.splitext(path)
     return ext.lower().lstrip('.') in ("usd", "usda", "usdc")
 
 def is_path_absolute(asset_path: str):
+        """
+        Return True if asset_path is absolute.
+
+        Windows drive paths (e.g. "C:/...") are recognized on every platform.
+        """
         is_absolute = False
         if os.path.isabs(asset_path):
             is_absolute = True
@@ -114,6 +126,11 @@ def resolve_asset_absolute_path(source_root: str, asset_str: str, src_layer: Sdf
 
 
 def resolve_reference_items(prim_spec: Sdf.PrimSpec):
+    """
+    Return the references authored on prim_spec as a list of (asset_path, prim_path) tuples.
+
+    Returns an empty list if the spec has no references or if they cannot be read.
+    """
     refs = []
     try:
         rlist = getattr(prim_spec, "referenceList", None)
@@ -247,6 +264,7 @@ def rewrite_asset_token_extensions_in_file(layer_path, from_ext, to_ext):
         return False
 
     def repl(m):
+        """Return the matched asset path with its extension replaced by to_ext, keeping a leading "./"."""
         orig = m.group(1)
         # try to preserve directories / leading ./ and normalize separators
         new = str(Path(orig).with_suffix(to_ext)).replace("\\", "/")

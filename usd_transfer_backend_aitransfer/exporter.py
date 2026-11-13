@@ -37,10 +37,20 @@ DEFAULT_FILTER_TYPENAMES.extend(LIGHT_FILTERS)
 
 
 class Exporter:
+    """
+    Exports a filtered copy of a USD layer stack.
+
+    Walks a root layer together with its sublayers, references and payloads, and
+    writes mirrored layers under the destination directory that contain only the
+    prims of the selected types (lights by default, optionally geometry and
+    referenced content) and their ancestors. Referenced assets such as textures are
+    copied alongside.
+    """
     FILTER_TYPENAMES = DEFAULT_FILTER_TYPENAMES
     DEFINED_OBJECTS = set()
 
     def __init__(self):
+        """Create an exporter with the default prim-type filters and no source or destination set."""
         self.active_filter_typenames = list(self.FILTER_TYPENAMES)
         self.src_usd_dir: str = None
         self.dst_usd_dir: str = None
@@ -680,6 +690,13 @@ class Exporter:
         return self._copy_non_usd_asset(src_asset_abs, dst_usd_dir)
 
     def copy_attribute_with_time_samples(self, attr_spec: Sdf.AttributeSpec, dst_attr: Usd.Attribute, layer: Sdf.Layer):
+        """
+        Copy the default value and the time samples of attr_spec to dst_attr.
+
+        layer is the layer attr_spec is authored in. If the default value is an asset
+        path, the file it points to is also copied to the destination directory.
+        Errors on individual values are ignored.
+        """
         try:
             if attr_spec.default is not None:
                 dst_attr.Set(attr_spec.default)
@@ -756,6 +773,12 @@ class Exporter:
 
             # Helper to process a variant body primSpec tree depth-first
             def _process_variant_body_tree(root_prim_spec: Sdf.PrimSpec):
+                """
+                Walk the prim spec tree of a variant body depth-first and copy what it depends on.
+
+                Every prim spec is defined in the destination, its references and payloads are
+                processed, and the referenced layers and nested variant sets are recursed into.
+                """
                 stack = [root_prim_spec]
                 while stack:
                     ps = stack.pop()
@@ -918,6 +941,15 @@ class Exporter:
             log_warning(f"⚠️ Skipping variant sets on {prim_spec.path}: {e}")
 
     def copy_prim_attributes(self, prim_spec: Sdf.PrimSpec, dst_prim: Usd.Prim, layer: Sdf.Layer):
+        """
+        Copy the authored content of prim_spec onto dst_prim.
+
+        Copies the attributes (with time samples), the relationship targets, and the
+        references and payloads. Referenced and payloaded assets are copied to the
+        destination directory and the arcs are added with the paths of the copies.
+        layer is the layer prim_spec is authored in. Failures are logged as warnings
+        and do not stop the copy.
+        """
         # Copy attributes
         for attr_name, attr_spec in prim_spec.attributes.items():
             try:
@@ -977,6 +1009,13 @@ class Exporter:
             log_warning(f" copying payloads on {prim_spec.path}: {e}")
 
     def define_prim_if_missing(self, stage: Usd.Stage, prim_spec: Sdf.PrimSpec, layer: Sdf.Layer):
+        """
+        Define (or override) the prim described by prim_spec on stage and copy its content.
+
+        A "def" spec is defined with its type name and an "over" spec is authored as an
+        override. Attributes, relationships, references, payloads and variant sets are
+        then copied from prim_spec. Returns True if the prim was authored, else False.
+        """
         dst_prim = None
         try:
             if prim_spec.specifier == Sdf.SpecifierDef:
@@ -999,6 +1038,12 @@ class Exporter:
         return False
 
     def _resolve_reference_layer(self, base_layer: Sdf.Layer, asset_path: str):
+        """
+        Find and open the layer that asset_path refers to, or return None.
+
+        Tries the path relative to base_layer, then as is, then with small variations
+        (with and without a leading "./"), and finally under self.source_root.
+        """
         # Try relative to layer, then try as-is, then try with ./, then try under source_root
         try:
             cand = Sdf.Layer.FindOrOpenRelativeToLayer(base_layer, asset_path)
@@ -1040,6 +1085,17 @@ class Exporter:
         return None
 
     def filter_prims(self, dst_stage, layer: Sdf.Layer, visited: set) -> bool:
+        """
+        Copy the prims of layer that pass the active filters into dst_stage.
+
+        A prim matches if its type is one of the active filter types (plus the geometry
+        types when include_geometries is set) or, with include_references, if one of
+        its references leads to matching content. Prims whose name was already defined
+        earlier (DEFINED_OBJECTS) are included as well. A matching prim is defined in
+        dst_stage together with all its ancestors.
+
+        Returns True if at least one prim was defined.
+        """
         # Returns True if something was defined in dst_stage
         stack = list(layer.rootPrims)
         any_defined = False
@@ -1105,6 +1161,13 @@ class Exporter:
         return any_defined
 
     def fix_sublayer_paths_relative_to_layer(self, layer: Sdf.Layer):
+        """
+        Rewrite the sublayer paths of the layer so that they are relative to its own folder.
+
+        A path with a drive prefix ("X:/...") is kept from the drive letter on.
+        Sublayers are processed recursively. Returns the new list of paths if anything
+        changed, otherwise None.
+        """
         changed = False
         new_paths = []
 
@@ -1139,6 +1202,19 @@ class Exporter:
     # Layer traversal & export (kept logic, but integrated with helpers)
     # --------------------------
     def _process_layer_recursively(self, input_layer: Sdf.Layer, visited: set) -> bool:
+        """
+        Export a filtered copy of input_layer, after exporting everything it depends on.
+
+        Sublayers and referenced/payloaded layers are processed first (depth-first).
+        The output layer is then created at the same relative path under the
+        destination directory, with the sublayer paths, time range and root metadata of
+        the source, and is filled by filter_prims(). If no prim matched, the output
+        file is removed again. With a target format set, the layer is exported with
+        that extension instead.
+
+        visited holds the identifiers of the layers that were already processed.
+        Returns True if an output layer was written, False otherwise.
+        """
         if not input_layer:
             log_warning(f"⚠️ Skipping unreadable layer.")
             return False
@@ -1218,6 +1294,10 @@ class Exporter:
             return False
 
     def recurse_into_sublayer(self, input_layer: Sdf.Layer, visited: set):
+        """
+        Resolve every sublayer of input_layer (in reverse order) and process it with
+        _process_layer_recursively().
+        """
         for sublayer_entry in reversed(input_layer.subLayerPaths):
             sublayer_asset_path = str(sublayer_entry)
             # Prefer ComputeAssetPathRelativeToLayer to find the actual file
@@ -1239,6 +1319,11 @@ class Exporter:
                     log_error(f"❌ Could not resolve sublayer: {sublayer_asset_path}")
 
     def _resolve_reference_items(self, prim_spec):
+        """
+        Return the references authored on prim_spec as a list of (asset_path, prim_path) tuples.
+
+        Returns an empty list if the spec has no references or if they cannot be read.
+        """
         refs = []
         try:
             rlist = getattr(prim_spec, "referenceList", None)
@@ -1449,6 +1534,10 @@ class Exporter:
             layer_dir = None
 
         def _process_prim_for_assets(ps: Sdf.PrimSpec):
+            """
+            Resolve every reference and payload asset authored on ps and copy it to the
+            destination (USD layers recursively, other files directly).
+            """
             # Handle reference and payload lists on this primSpec
             for list_attr in ("referenceList", "references", "payloadList", "payloads"):
                 lst = getattr(ps, list_attr, None)
@@ -1570,6 +1659,16 @@ class Exporter:
                                               format: str = None,
                                               include_geometries: bool = False,
                                               include_references: bool = True) -> None:
+        """
+        Export a filtered copy of a USD file and of its dependencies (main entry point).
+
+        - input_usd_path: root USD layer to read.
+        - output_path: path of the exported root layer; its folder becomes the destination root.
+        - source_root: root of the source project tree, used to resolve asset paths.
+        - format: optional output extension (e.g. "usda") for the exported layers.
+        - include_geometries: also keep geometry prims (GEOM_FILTERS).
+        - include_references: also keep prims whose references lead to matching content.
+        """
         self.source_root = source_root
         self.src_usd_dir = os.path.dirname(os.path.abspath(input_usd_path))
         self.dst_usd_dir = os.path.dirname(os.path.abspath(output_path))

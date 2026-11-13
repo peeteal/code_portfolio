@@ -12,6 +12,7 @@ class SSHBackend:
     """
 
     def __init__(self):
+        """Create a disconnected backend; call connect() to open the SSH session."""
         self.ssh = None
         self.sftp = None
         self.connected = False
@@ -32,6 +33,7 @@ class SSHBackend:
         self.connected = True
 
     def disconnect(self):
+        """Close the SFTP and SSH sessions (errors are ignored) and mark the backend as disconnected."""
         if self.sftp:
             try:
                 self.sftp.close()

@@ -5,6 +5,16 @@ import time
 import csv
 
 def main():
+    """
+    Batch-process files with headless Blender and record timing statistics.
+
+    Walks --input_dir recursively and, for every file with the --ext extension
+    (default .rdc), runs Blender in background mode with the --script processing
+    script. The script receives the input file and an output folder that mirrors
+    the input structure under --output_dir. Files that fail are reported and
+    skipped. The size and processing time of each file are written to the --csv
+    file.
+    """
     parser = argparse.ArgumentParser(description="Batch process RDC files recursively with Blender and track timing statistics.")
     parser.add_argument("--input_dir", required=True, help="Root folder containing .rdc files (recursively)")
     parser.add_argument("--output_dir", required=True, help="Root folder to store exports (mirrors input structure)")

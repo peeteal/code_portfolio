@@ -21,7 +21,15 @@ _current_run_thread = None
 _run_lock = threading.Lock()
 
 def run_commands_worker(commands, local_dir):
+    """
+    Run the given command lines in a background thread.
+
+    Log, progress and error events of the CommandRunnerWorker are broadcast to the
+    connected browser clients as "LOG|..." and "PROGRESS|..." messages, followed by
+    "PROGRESS_DONE" when the run ends.
+    """
     def worker_thread():
+        """Thread body: start the CommandRunnerWorker and broadcast a failure to start it."""
         try:
             # worker = CommandRunnerWorker(backend, commands, local_dir)
 
@@ -55,6 +63,15 @@ def run_commands_worker(commands, local_dir):
 
 @app.route("/", methods=["GET", "POST"])
 def index():
+    """
+    Main page: handle the form actions and render the UI.
+
+    A POST is dispatched by the name of the submit button: load_private,
+    save_private, connect, disconnect, reload, add_line (append a command line for
+    the selected project/sequence/shot/version) and run (start the commands in a
+    background thread). The page is then rendered with the connection state, the
+    credentials, the selection lists and the command text.
+    """
     # import time
     # for i in range(10):
     #     broadcast(f"LOG|Test message {i}")
@@ -218,6 +235,7 @@ def index():
 
 @app.route("/api/sequences")
 def api_sequences():
+    """Return the sequences of the ?project= argument as a JSON list (empty if not connected)."""
     project = request.args.get("project", "")
     if not backend.connected or not project:
         return jsonify([])
@@ -230,6 +248,7 @@ def api_sequences():
 
 @app.route("/api/shots")
 def api_shots():
+    """Return the shots of the given ?project= and ?sequence= as a JSON list (empty if not connected)."""
     project = request.args.get("project", "")
     sequence = request.args.get("sequence", "")
     if not backend.connected or not (project and sequence):
@@ -243,6 +262,10 @@ def api_shots():
 
 @app.route("/api/versions")
 def api_versions():
+    """
+    Return the versions of the given ?project=, ?sequence= and ?shot= as a JSON list
+    (empty if not connected).
+    """
     project = request.args.get("project", "")
     sequence = request.args.get("sequence", "")
     shot = request.args.get("shot", "")
@@ -322,6 +345,7 @@ def message_stream():
 
 @app.route('/stream')
 def stream():
+    """Server-sent events endpoint that streams the broadcast log and progress messages to the browser."""
     return Response(stream_with_context(message_stream()), mimetype='text/event-stream')
 
 

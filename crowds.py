@@ -13,6 +13,20 @@ CONVERSION_GLOBAL_STATE = {}
 
 @unreal.uclass()
 class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrary):
+    """
+    Blueprint function library that converts Sequencer crowd characters to
+    vertex-animated static meshes (VATs).
+
+    For a spawnable binding, the skeletal meshes of the character are converted to
+    static meshes, their materials are duplicated with the VAT parameters enabled,
+    and the animations are baked to textures through the AnimToTexture plugin. A
+    new Blueprint spawnable with material "Frame" tracks is then added to the
+    sequence; the original bindings can optionally be deleted.
+
+    The conversion is driven from Blueprint in three steps: convert_meshes_start(),
+    convert_binding() for each binding, and convert_meshes_finish(). The library
+    also offers helpers to solo, mute and restore bindings.
+    """
 
     @unreal.ufunction(static=True, params=[])
     def convert_meshes_start():
@@ -42,6 +56,7 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
         debug = True
 
         def debug_print(message):
+            """Write message to the Unreal log when the local debug flag is enabled."""
             if debug:
                 unreal.log(message)
 
@@ -682,6 +697,12 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
         unreal.log('[CROWD CONVERSION] convert_meshes_finish: cleanup complete')
 
     class AnimInfo:
+        """
+        Describes one skeletal animation section found on a Sequencer binding.
+
+        Holds the AnimSequence and its length, the display rate of the owning sequence,
+        and the range of the section. Filled in by _get_anim_sequences_from_child_binding().
+        """
         animation: unreal.AnimSequence = None
         animation_length_seconds: float | None = None
         animation_length_frames: int | None   # rounded to sequence display rate = None
@@ -695,6 +716,7 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
         section: unreal.MovieSceneSection = None  # the MovieSceneSection object
 
         def to_string(self, prefix: str = "") -> str:
+            """Return a multi-line, human-readable summary; every line starts with prefix."""
             anim_name = self.animation.get_name() if self.animation else "None"
             section_name = self.section.get_name() if self.section else "None"
 
@@ -935,6 +957,12 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
             #  - an object reference (has get_name)
             #  - a soft/path string (loadable by EditorAssetLibrary.load_asset)
             def _load_parent_object(parent_ref):
+                """
+                Turn a material parent reference into a loaded object.
+
+                Accepts an object (returned as is) or an asset path string (loaded through
+                EditorAssetLibrary). Returns None if it cannot be resolved.
+                """
                 if not parent_ref:
                     return None
                 # already an object
@@ -1978,6 +2006,9 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
             # Use package path: version_folder + '/' + RT_name
             try:
                 def _delete_asset_by_name(folder, name):
+                    """
+                    Delete the asset called name in folder if it exists and log the outcome; never raises.
+                    """
                     pkg = folder.rstrip('/') + '/' + name
                     try:
                         # if asset exists, try to delete it
@@ -2101,6 +2132,9 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
 
             # Helper: try to get bound objects using direct API or SequencerTools fallback
             def _get_bound_objects(binding):
+                """
+                Return the objects bound to the given binding ID, or an empty list if there is no sequence.
+                """
                 objs = []
                 if sequence:
                     objs = unreal.LevelSequenceEditorBlueprintLibrary.get_bound_objects(binding)
@@ -2164,6 +2198,19 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
         child_binding: unreal.MovieSceneBindingProxy,
         sequence: unreal.LevelSequence | None = None
     ) -> list:
+        """
+        Collect animation info for every skeletal animation section on a binding.
+
+        Goes through the MovieSceneSkeletalAnimationTrack tracks of the binding and
+        builds one AnimInfo per section that plays an AnimSequence. Each AnimInfo holds
+        the animation and its length (in seconds and in display-rate frames), the
+        section range (frames and seconds), the first-loop start offset, the sequence
+        display rate and the section object itself.
+
+        - sequence: LevelSequence used for the display rate; if None, the sequence
+          currently open in Sequencer is used.
+        Returns: list of AnimInfo, empty if child_binding is not set.
+        """
 
         if not child_binding:
             return []
@@ -2175,6 +2222,11 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
         # Sequence display rate helpers
         # ------------------------------------------------------------
         def _get_sequence_display_rate(seq):
+            """
+            Return the display rate of the sequence as (numerator, denominator, fps).
+
+            Values that cannot be determined are returned as None.
+            """
             num = None
             den = None
             rate_float = None
@@ -2200,36 +2252,48 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
         # Section helpers (DOCUMENTED API)
         # ------------------------------------------------------------
         def _has_start(section):
+            """Return True if the section has a start frame (is not open-ended at its start)."""
             if hasattr(section, 'has_start_frame'):
                 return section.has_start_frame()
             return unreal.MovieSceneSectionExtensions.has_start_frame(section)
 
         def _has_end(section):
+            """Return True if the section has an end frame (is not open-ended at its end)."""
             if hasattr(section, 'has_end_frame'):
                 return section.has_end_frame()
             return unreal.MovieSceneSectionExtensions.has_end_frame(section)
 
         def _get_start_frame(section):
+            """Return the start frame of the section."""
             if hasattr(section, 'get_start_frame'):
                 return section.get_start_frame()
             return unreal.MovieSceneSectionExtensions.get_start_frame(section)
 
         def _get_end_frame(section):
+            """Return the end frame of the section."""
             if hasattr(section, 'get_end_frame'):
                 return section.get_end_frame()
             return unreal.MovieSceneSectionExtensions.get_end_frame(section)
 
         def _get_start_seconds(section):
+            """Return the start time of the section in seconds."""
             if hasattr(section, 'get_start_frame_seconds'):
                 return section.get_start_frame_seconds()
             return unreal.MovieSceneSectionExtensions.get_start_frame_seconds(section)
 
         def _get_end_seconds(section):
+            """Return the end time of the section in seconds."""
             if hasattr(section, 'get_end_frame_seconds'):
                 return section.get_end_frame_seconds()
             return unreal.MovieSceneSectionExtensions.get_end_frame_seconds(section)
 
         def _extract_section_range(section, seq_fps):
+            """
+            Return (start_frame, end_frame, start_seconds, end_seconds) for the section.
+
+            An open-ended start or end is returned as None. Missing second values are
+            derived from the frame values and seq_fps when possible.
+            """
             start_frame = None
             end_frame = None
             start_seconds = None
@@ -2257,6 +2321,7 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
         # Anim length helper
         # ------------------------------------------------------------
         def _get_anim_length_seconds(anim: unreal.AnimSequence) -> float | None:
+            """Return the play length of the animation in seconds, or None if unavailable."""
             if hasattr(anim, 'get_play_length'):
                 return float(anim.get_play_length())
             if hasattr(anim, 'get_editor_property'):
@@ -2328,6 +2393,14 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
 
     @staticmethod
     def get_static_mesh_from_data_asset(data_asset):
+        """
+        Return the StaticMesh referenced by a data asset, or None if there is none.
+
+        Tries common property names first (as attributes and as editor properties),
+        then scans all attributes for the first StaticMesh value.
+        Note: this method is defined again further down in the class; the later
+        definition is the one in effect.
+        """
         # try common property names first
         candidates = ['static_mesh', 'StaticMesh', 'mesh', 'Mesh', 'mesh_asset', 'StaticMeshAsset']
         for name in candidates:
@@ -2359,6 +2432,11 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
 
     @staticmethod
     def get_all_materials_from_static_mesh(static_mesh, lod=0):
+        """
+        Return the material interfaces assigned to the material slots of a static mesh.
+
+        Returns an empty list if static_mesh is None. The lod argument is currently unused.
+        """
         if static_mesh is None:
             return []
         # number of material slots / sections on LOD 0
@@ -2736,6 +2814,7 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
 
     @staticmethod
     def get_object_from_binding(bind: unreal.MovieSceneBindingProxy):
+        """Return the first object bound to the binding in the currently open sequence, or None."""
         seq: unreal.MovieSceneSequence = unreal.LevelSequenceEditorBlueprintLibrary.get_current_level_sequence()
         id = seq.get_binding_id(bind)
         obj = unreal.LevelSequenceEditorBlueprintLibrary.get_bound_objects(id)
@@ -2920,11 +2999,24 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
         #     return False
 
         def get_vats_parameter_info(material_obj) -> bool:
+            """
+            Return the value of the "VATs textures" static switch parameter of a material.
+
+            Works for Material, MaterialInstanceConstant and MaterialInstanceDynamic (via
+            its parent). Returns False if the parameter does not exist or cannot be read.
+            """
             target_name = "VATs textures"
             target_lc = target_name.lower()
 
             # Utility to attempt safe retrieval of a "material-like" asset to query with MaterialEditingLibrary.
             def _resolve_editable_target(mat):
+                """
+                Resolve mat to an asset that MaterialEditingLibrary can query.
+
+                Returns (kind, target), where kind is "instance" (MaterialInstanceConstant),
+                "material" (Material), "material_interface" (any other MaterialInterface) or
+                None if nothing usable was found. A dynamic instance is resolved to its parent.
+                """
                 # MaterialInstanceConstant is good as-is
                 if isinstance(mat, unreal.MaterialInstanceConstant):
                     return ("instance", mat)
@@ -3174,6 +3266,9 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
                                     unreal.log_warning(f"Invalid VAT range for '{comp_name}', skipping.")
                                 else:
                                     def vat_to_display_frame(vat_global):
+                                        """
+                                        Convert a global VAT frame index to the matching sequence display-rate frame.
+                                        """
                                         return int(start_display_frame) + (vat_global - global_start)
 
                                     # Build VAT points: start, every boundary (m * baked), boundary+1, end
@@ -3334,6 +3429,12 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
 
         # robust matcher: compare GUIDs first, then display names, then object/str fallback
         def is_binding_target(candidate_binding, target_bindings):
+            """
+            Return True if candidate_binding matches any binding in target_bindings.
+
+            Compares the binding GUIDs first, then the display names, then the objects
+            themselves and finally their string representations.
+            """
             for t in target_bindings:
                 try:
                     # GUID comparison (preferred)
@@ -3477,6 +3578,12 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
 
         # robust matcher: compare GUIDs first, then display names, then object/str fallback
         def is_binding_target(candidate_binding, target_bindings):
+            """
+            Return True if candidate_binding matches any binding in target_bindings.
+
+            Compares the binding GUIDs first, then the display names, then the objects
+            themselves and finally their string representations.
+            """
             for t in target_bindings:
                 try:
                     # GUID comparison (preferred)
@@ -3852,6 +3959,10 @@ class UppCrowdsConvertionRefactorBlueprintLibrary(unreal.BlueprintFunctionLibrar
 
     @staticmethod
     def refresh_actor_render_state(actor: unreal.Actor):
+        """
+        Mark the render state of the actor and of all its primitive components as dirty,
+        so that they are redrawn. Failures are ignored.
+        """
         comps = actor.get_components_by_class(unreal.PrimitiveComponent)
         for c in comps:
             try:

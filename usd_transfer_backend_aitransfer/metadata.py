@@ -1,6 +1,10 @@
 from pxr import Usd, UsdGeom
 
 def copy_root_metadata_animated(src_stage: Usd.Stage, dst_stage: Usd.Stage) -> None:
+    """
+    Copy the time settings (start/end time code, time codes per second, frames per
+    second) and the root asset info from src_stage to dst_stage.
+    """
     src_root = src_stage.GetPseudoRoot()
     dst_root = dst_stage.GetPseudoRoot()
     if src_stage.GetStartTimeCode():
@@ -15,6 +19,7 @@ def copy_root_metadata_animated(src_stage: Usd.Stage, dst_stage: Usd.Stage) -> N
         dst_root.SetAssetInfo(src_root.GetAssetInfo())
 
 def copy_root_metadata(src_stage: Usd.Stage, dst_stage: Usd.Stage) -> None:
+    """Copy the up axis, the meters-per-unit scale and the root asset info from src_stage to dst_stage."""
     src_root = src_stage.GetPseudoRoot()
     dst_root = dst_stage.GetPseudoRoot()
     if UsdGeom.GetStageUpAxis(src_stage):
